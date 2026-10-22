@@ -1,0 +1,11 @@
+{
+  "uuid": "mac-like-shortcuts@local",
+  "name": "Mac-like Close and Quit",
+  "description": "Configurable close and quit shortcuts with native Ctrl+W passthrough in browsers.",
+  "shell-version": [
+    "50",
+    "51"
+  ],
+  "version": 4,
+  "settings-schema": "org.gnome.shell.extensions.mac-like-shortcuts"
+}

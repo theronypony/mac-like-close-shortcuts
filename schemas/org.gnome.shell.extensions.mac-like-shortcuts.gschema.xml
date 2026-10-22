@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.mac-like-shortcuts" path="/org/gnome/shell/extensions/mac-like-shortcuts/">
+    <key name="close-item" type="as">
+      <default>['&lt;Control&gt;w']</default>
+      <summary>Close browser tab or focused window</summary>
+      <description>Configurable global keyboard shortcut for close item.</description>
+    </key>
+    <key name="quit-app" type="as">
+      <default>['&lt;Control&gt;q']</default>
+      <summary>Request that all windows of the focused app close</summary>
+      <description>Configurable global keyboard shortcut for quit app.</description>
+    </key>
+  </schema>
+</schemalist>
