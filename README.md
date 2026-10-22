@@ -1,4 +1,4 @@
-# Mac-like Close and Quit (version 3)
+# Mac-like Close and Quit
 
 GNOME Shell extension for GNOME 50 (Ubuntu 26.04) and GNOME 51 (Ubuntu 26.10).
 Designed for Wayland; also usable with X11.
