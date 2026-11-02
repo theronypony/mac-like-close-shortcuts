@@ -42,7 +42,7 @@ Ctrl+W to those apps after you release the modifiers.
 
 Download the extension ZIP to `~/Downloads`. The archive includes the compiled settings schema.
 
-1. Disable the currently installed extension:
+1. Disable any older currently installed version (if applicable):
 
    `gnome-extensions disable mac-like-shortcuts@local`
 
