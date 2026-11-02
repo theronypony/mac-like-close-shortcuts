@@ -3,13 +3,23 @@
   <schema id="org.gnome.shell.extensions.mac-like-shortcuts" path="/org/gnome/shell/extensions/mac-like-shortcuts/">
     <key name="close-item" type="as">
       <default>['&lt;Control&gt;w']</default>
-      <summary>Close browser tab or focused window</summary>
+      <summary>Close an application tab or the focused window</summary>
       <description>Configurable global keyboard shortcut for close item.</description>
     </key>
     <key name="quit-app" type="as">
       <default>['&lt;Control&gt;q']</default>
       <summary>Request that all windows of the focused app close</summary>
       <description>Configurable global keyboard shortcut for quit app.</description>
+    </key>
+    <key name="tab-close-apps" type="as">
+      <default>[]</default>
+      <summary>Applications that use native tab closing</summary>
+      <description>Desktop application IDs or WM_CLASS values that should receive Ctrl+W instead of a window-close request. Matching is exact and case-insensitive, with an optional .desktop suffix. Overrides automatic detection of browsers and Sublime Text.</description>
+    </key>
+    <key name="window-close-apps" type="as">
+      <default>[]</default>
+      <summary>Applications that close the focused window</summary>
+      <description>Desktop application IDs or WM_CLASS values that should close the focused window. Matching is exact and case-insensitive, with an optional .desktop suffix. Takes precedence over tab-close-apps and automatic detection.</description>
     </key>
   </schema>
 </schemalist>

@@ -4,11 +4,9 @@ import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import {usesTabClose} from './appRules.js';
 
-// App IDs / WM_CLASS values for popular web browsers.
-const BROWSER_TOKEN = /(?:^|[._-])(?:firefox|librewolf|waterfox|floorp|zen-browser|zen|chromium|google-chrome|chrome|brave-browser|brave|microsoft-edge|edge|vivaldi|opera|epiphany|tor-browser|torbrowser|duckduckgo)(?:[._-]|$)/i;
-
-// Needed only when the user chooses a custom browser shortcut other than Ctrl+W.
+// Needed only when the user chooses a custom close shortcut other than Ctrl+W.
 const HELD_MODIFIERS = Clutter.ModifierType.SHIFT_MASK |
     Clutter.ModifierType.CONTROL_MASK |
     Clutter.ModifierType.MOD1_MASK |
@@ -23,7 +21,7 @@ const PENDING_TIMEOUT_US = 3_000_000;
 // GTK accelerator strings are normally canonicalized to "<Control>w".
 // Accept the alternate "<Primary>w" form, too. Only exactly Ctrl+W
 // qualifies for native passthrough, not Ctrl+Shift+W or Super+W.
-function isNativeBrowserCloseAccelerator(accelerator) {
+function isNativeCloseAccelerator(accelerator) {
     return /^<(?:Control|Primary)>w$/i.test(accelerator ?? '');
 }
 
@@ -35,18 +33,31 @@ export default class MacLikeShortcuts extends Extension {
         this._pending = null;
         this._virtualKeyboard = null;
         this._focusId = global.display.connect(
-            'notify::focus-window', () => this._syncCloseBinding());
+            'notify::focus-window', () => {
+                this._clearPending();
+                this._syncCloseBinding();
+            });
         this._closeSettingsId = this._settings.connect(
             'changed::close-item', () => {
                 // Refresh when the preferences dialog changes the accelerator.
+                this._clearPending();
                 this._removeCloseBinding();
                 this._syncCloseBinding();
             });
         this._quitSettingsId = this._settings.connect(
             'changed::quit-app', () => {
+                this._clearPending();
                 this._removeQuitBinding();
                 this._syncQuitBinding();
             });
+        const refreshAppRules = () => {
+            this._clearPending();
+            this._syncCloseBinding();
+        };
+        this._tabAppsSettingsId = this._settings.connect(
+            'changed::tab-close-apps', refreshAppRules);
+        this._windowAppsSettingsId = this._settings.connect(
+            'changed::window-close-apps', refreshAppRules);
         this._syncCloseBinding();
         this._syncQuitBinding();
     }
@@ -59,9 +70,15 @@ export default class MacLikeShortcuts extends Extension {
             this._settings.disconnect(this._closeSettingsId);
         if (this._quitSettingsId)
             this._settings.disconnect(this._quitSettingsId);
+        if (this._tabAppsSettingsId)
+            this._settings.disconnect(this._tabAppsSettingsId);
+        if (this._windowAppsSettingsId)
+            this._settings.disconnect(this._windowAppsSettingsId);
         this._focusId = 0;
         this._closeSettingsId = 0;
         this._quitSettingsId = 0;
+        this._tabAppsSettingsId = 0;
+        this._windowAppsSettingsId = 0;
         this._removeCloseBinding();
         this._removeQuitBinding();
         this._virtualKeyboard = null;
@@ -96,10 +113,14 @@ export default class MacLikeShortcuts extends Extension {
         return global.display.get_focus_window();
     }
 
-    _isBrowser(window) {
+    _usesTabClose(window) {
+        if (!window || !this._settings)
+            return false;
         const app = Shell.WindowTracker.get_default().get_window_app(window);
-        return [app?.get_id(), window.get_wm_class(), window.get_wm_class_instance()]
-            .some(name => name && BROWSER_TOKEN.test(name));
+        return usesTabClose(
+            [app?.get_id(), window.get_wm_class(), window.get_wm_class_instance()],
+            this._settings.get_strv('tab-close-apps'),
+            this._settings.get_strv('window-close-apps'));
     }
 
     _syncCloseBinding() {
@@ -107,14 +128,14 @@ export default class MacLikeShortcuts extends Extension {
             return;
         const shortcut = this._settings.get_strv('close-item')[0] ?? '';
         const window = this._focusedWindow();
-        const allowNativeBrowserCtrlW = !!window &&
-            isNativeBrowserCloseAccelerator(shortcut) && this._isBrowser(window);
+        const allowNativeCtrlW = !!window &&
+            isNativeCloseAccelerator(shortcut) && this._usesTabClose(window);
 
-        // Key point: while a browser has focus and the shortcut is Ctrl+W,
+        // While a tab-closing app has focus and the shortcut is Ctrl+W,
         // don't register a compositor shortcut at all. The physical Ctrl+W
-        // goes straight to the browser. No injection, timers, or dropped
-        // presses. Reinstall the binding after focus leaves the browser.
-        if (!shortcut || allowNativeBrowserCtrlW) {
+        // goes straight to the app. No injection, timers, or dropped presses.
+        // Reinstall the binding after focus leaves the tab-closing app.
+        if (!shortcut || allowNativeCtrlW) {
             this._removeCloseBinding();
             return;
         }
@@ -139,14 +160,14 @@ export default class MacLikeShortcuts extends Extension {
         const window = this._focusedWindow();
         if (!window)
             return;
-        if (!this._isBrowser(window)) {
+        if (!this._usesTabClose(window)) {
             if (window.can_close())
                 window.delete(global.get_current_time());
             return;
         }
 
         // This is only for custom shortcuts like Super+W. Ctrl+W itself
-        // is never globally captured when a browser is focused.
+        // is never globally captured when a tab-closing app is focused.
         if (this._pending?.window === window) {
             this._pending.count++;
             return;
@@ -183,10 +204,13 @@ export default class MacLikeShortcuts extends Extension {
             this._pending = null;
             pending.sourceId = 0;
             try {
-                for (let i = 0; i < pending.count; i++)
+                for (let i = 0; i < pending.count; i++) {
+                    if (this._focusedWindow() !== pending.window)
+                        break;
                     this._sendCtrlW();
+                }
             } catch (error) {
-                console.error(`[Mac-like Shortcuts] Browser Ctrl+W failed: ${error}`);
+                console.error(`[Mac-like Shortcuts] Tab Ctrl+W failed: ${error}`);
             }
             return GLib.SOURCE_REMOVE;
         });

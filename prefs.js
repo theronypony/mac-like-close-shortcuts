@@ -1,14 +1,19 @@
 import Adw from 'gi://Adw';
 import Gdk from 'gi://Gdk';
+import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+import {isDefaultTabApp, normalizeAppId} from './appRules.js';
 
 const SHORTCUTS = [
     ['close-item', 'Close tab or window',
-        'Ctrl+W passes directly to browsers; other apps close the focused window.'],
+        'Ctrl+W passes to browsers, Sublime Text, and your chosen apps; others close the window.'],
     ['quit-app', 'Quit application',
         'Requests that every window of the focused application close.'],
 ];
+
+const APP_BEHAVIOR = {AUTOMATIC: 0, TAB: 1, WINDOW: 2};
+const APP_SETTING_KEYS = ['tab-close-apps', 'window-close-apps'];
 
 const ACCEL_MASK = Gdk.ModifierType.SHIFT_MASK |
     Gdk.ModifierType.CONTROL_MASK |
@@ -30,7 +35,20 @@ const MODIFIER_KEYVALS = new Set([
 export default class ShortcutPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
+        // Keep settings alive for the whole preferences window and disconnect
+        // callbacks before its widgets are disposed.
+        window._settings = settings;
+        const settingsSignals = [];
+        window.search_enabled = true;
+        window.set_default_size(760, 720);
+        window.connect('close-request', () => {
+            for (const id of settingsSignals)
+                settings.disconnect(id);
+            settingsSignals.length = 0;
+            return false;
+        });
         const page = new Adw.PreferencesPage({
+            name: 'shortcuts',
             title: 'Keyboard shortcuts',
             icon_name: 'preferences-desktop-keyboard-shortcuts-symbolic',
         });
@@ -63,7 +81,7 @@ export default class ShortcutPreferences extends ExtensionPreferences {
             const updateLabel = () => {
                 shortcut.accelerator = settings.get_strv(key)[0] ?? '';
             };
-            settings.connect(`changed::${key}`, updateLabel);
+            settingsSignals.push(settings.connect(`changed::${key}`, updateLabel));
             updateLabel();
             button.connect('clicked', () =>
                 this._recordShortcut(window, settings, key, title));
@@ -87,12 +105,203 @@ export default class ShortcutPreferences extends ExtensionPreferences {
 
         const info = new Adw.PreferencesGroup({
             title: 'Notes',
-            description: 'For Ctrl+W, browsers receive the original keystroke directly, ' +
-                'without a simulated key or delay. Other shortcuts use a ' +
-                'best-effort simulated Ctrl+W in browsers. Avoid conflicts ' +
-                'with GNOME shortcuts. Disabled means no shortcut assigned.',
+            description: 'Use App behavior to choose which apps close tabs. ' +
+                'Those apps receive the original Ctrl+W directly, without a ' +
+                'simulated key or delay. Other close shortcuts use a best-effort ' +
+                'simulated Ctrl+W in those apps. The app must already support ' +
+                'Ctrl+W for tab or document closing. Avoid conflicts with GNOME ' +
+                'shortcuts. Disabled means no shortcut assigned.',
         });
         page.add(info);
+
+        this._addAppPreferences(window, settings, settingsSignals);
+    }
+
+    _addAppPreferences(window, settings, settingsSignals) {
+        const page = new Adw.PreferencesPage({
+            name: 'apps',
+            title: 'App behavior',
+            icon_name: 'application-x-executable-symbolic',
+        });
+        window.add(page);
+
+        const defaults = new Adw.PreferencesGroup({
+            title: 'Choose what the close shortcut does',
+            description: 'Automatic uses tab closing in browsers and Sublime Text, ' +
+                'and window closing in other apps. Close tab lets the app handle ' +
+                'Ctrl+W itself; the app decides what happens to its last tab. ' +
+                'Changes apply immediately.',
+        });
+        page.add(defaults);
+        const resetRow = new Adw.ActionRow({
+            title: 'Restore automatic app behavior',
+            subtitle: 'Clear app choices without changing your keyboard shortcuts.',
+        });
+        const reset = new Gtk.Button({label: 'Reset apps', valign: Gtk.Align.CENTER});
+        resetRow.add_suffix(reset);
+        resetRow.activatable_widget = reset;
+        defaults.add(resetRow);
+
+        const manualGroup = new Adw.PreferencesGroup({
+            title: 'Add an app manually',
+            description: 'For apps missing from the list, enter a desktop app ID ' +
+                'or WM_CLASS, such as org.gnome.TextEditor.desktop. ' +
+                'Add enables tab closing. IDs match exactly, ignoring letter ' +
+                'case and an optional .desktop suffix.',
+        });
+        page.add(manualGroup);
+        const entry = new Adw.EntryRow({title: 'App ID or WM_CLASS'});
+        const add = new Gtk.Button({
+            label: 'Add',
+            valign: Gtk.Align.CENTER,
+            sensitive: false,
+        });
+        entry.add_suffix(add);
+        manualGroup.add(entry);
+        entry.connect('changed', () => {
+            add.sensitive = entry.text.trim().length > 0;
+        });
+
+        const customGroup = new Adw.PreferencesGroup({
+            title: 'Custom identifiers',
+            description: 'Remove an entry to restore its automatic behavior. ' +
+                'If multiple identifiers match the same app, Close window takes precedence.',
+            visible: false,
+        });
+        page.add(customGroup);
+        const appsGroup = new Adw.PreferencesGroup({
+            title: 'Installed applications',
+            description: 'Use the search button to find an app by name or ID. ' +
+                'Choose Close tab, Close window, or Automatic for each app.',
+        });
+        page.add(appsGroup);
+
+        // Rows are keyed the same way as runtime rules. This avoids duplicate
+        // entries when a user supplies a different case or a .desktop suffix.
+        const rows = new Map();
+        const installed = Gio.AppInfo.get_all()
+            .filter(app => app.should_show() && app.get_id())
+            .sort((a, b) => a.get_display_name().localeCompare(b.get_display_name()));
+
+        const addRow = (identifier, title, app = null) => {
+            const id = normalizeAppId(identifier);
+            if (rows.has(id))
+                return;
+            const automatic = isDefaultTabApp([
+                identifier, app?.get_startup_wm_class?.(),
+            ]) ? 'Automatic (tab)' : 'Automatic (window)';
+            const row = new Adw.ComboRow({
+                title,
+                subtitle: app ? identifier : 'Manual app ID or WM_CLASS',
+                use_markup: false,
+                title_lines: 1,
+                subtitle_lines: 1,
+                model: Gtk.StringList.new([automatic, 'Close tab', 'Close window']),
+            });
+            const state = {row, identifier, custom: !app, syncing: false};
+            rows.set(id, state);
+            if (app) {
+                const icon = app.get_icon();
+                if (icon)
+                    row.add_prefix(new Gtk.Image({gicon: icon, pixel_size: 32}));
+                appsGroup.add(row);
+            } else {
+                const remove = new Gtk.Button({
+                    icon_name: 'user-trash-symbolic',
+                    tooltip_text: 'Remove this rule and restore automatic behavior',
+                    valign: Gtk.Align.CENTER,
+                });
+                remove.add_css_class('flat');
+                row.add_suffix(remove);
+                customGroup.add(row);
+                customGroup.visible = true;
+                remove.connect('clicked', () => {
+                    this._setAppBehavior(settings, identifier, APP_BEHAVIOR.AUTOMATIC);
+                    rows.delete(id);
+                    customGroup.remove(row);
+                    customGroup.visible = [...rows.values()].some(item => item.custom);
+                });
+            }
+            row.connect('notify::selected', () => {
+                if (!state.syncing)
+                    this._setAppBehavior(settings, identifier, row.selected);
+            });
+        };
+
+        for (const app of installed)
+            addRow(app.get_id(), app.get_display_name(), app);
+        if (!installed.length) {
+            appsGroup.add(new Adw.ActionRow({
+                title: 'No installed applications found',
+                subtitle: 'You can still add apps manually above.',
+                activatable: false,
+            }));
+        }
+
+        const syncRows = () => {
+            const tabApps = settings.get_strv('tab-close-apps');
+            const windowApps = settings.get_strv('window-close-apps');
+            for (const identifier of [...tabApps, ...windowApps]) {
+                if (normalizeAppId(identifier))
+                    addRow(identifier, identifier);
+            }
+            const tabIds = new Set(tabApps.map(normalizeAppId));
+            const windowIds = new Set(windowApps.map(normalizeAppId));
+            for (const [id, state] of rows) {
+                state.syncing = true;
+                state.row.selected = windowIds.has(id) ? APP_BEHAVIOR.WINDOW :
+                    tabIds.has(id) ? APP_BEHAVIOR.TAB : APP_BEHAVIOR.AUTOMATIC;
+                state.syncing = false;
+            }
+        };
+        for (const key of APP_SETTING_KEYS)
+            settingsSignals.push(settings.connect(`changed::${key}`, syncRows));
+        syncRows();
+
+        const addIdentifier = () => {
+            const identifier = entry.text.trim();
+            if (!normalizeAppId(identifier) || identifier.length > 255 ||
+                /[/\\\x00-\x1f\x7f]/.test(identifier)) {
+                window.add_toast(new Adw.Toast({
+                    title: 'Enter an app ID or WM_CLASS, without a file path.',
+                }));
+                return;
+            }
+            this._setAppBehavior(settings, identifier, APP_BEHAVIOR.TAB);
+            entry.text = '';
+            window.add_toast(new Adw.Toast({title: 'Tab closing enabled for this app.'}));
+        };
+        add.connect('clicked', addIdentifier);
+        entry.connect('entry-activated', addIdentifier);
+        reset.connect('clicked', () => {
+            for (const key of APP_SETTING_KEYS)
+                settings.reset(key);
+            for (const [id, state] of rows) {
+                if (state.custom) {
+                    rows.delete(id);
+                    customGroup.remove(state.row);
+                }
+            }
+            customGroup.visible = false;
+        });
+    }
+
+    _setAppBehavior(settings, identifier, behavior) {
+        if (![APP_BEHAVIOR.AUTOMATIC, APP_BEHAVIOR.TAB, APP_BEHAVIOR.WINDOW]
+            .includes(behavior))
+            return;
+        const id = normalizeAppId(identifier);
+        if (!id)
+            return;
+        // Remove both old choices, including differently cased duplicates.
+        // A single identifier is never intentionally saved in both lists.
+        for (const [index, key] of APP_SETTING_KEYS.entries()) {
+            const values = settings.get_strv(key)
+                .filter(value => normalizeAppId(value) !== id);
+            if (behavior === index + 1)
+                values.push(identifier.trim());
+            settings.set_strv(key, values);
+        }
     }
 
     _recordShortcut(window, settings, key, title) {
