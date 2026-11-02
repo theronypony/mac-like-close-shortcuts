@@ -46,9 +46,9 @@ Download the extension ZIP to `~/Downloads`. The archive includes the compiled s
 
    `gnome-extensions disable mac-like-shortcuts@local`
 
-2. Install the extension (replace `EXTENSION.zip` with the downloaded filename):
+2. Install the extension (replace `mac-like-close-shortcuts-0.1.zip` with the downloaded filename):
 
-   `gnome-extensions install --force ~/Downloads/EXTENSION.zip`
+   `gnome-extensions install --force ~/Downloads/mac-like-close-shortcuts-0.1.zip`
 
 3. **Log out and log back in** so GNOME Shell loads the new code and settings schema.
 
