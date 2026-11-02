@@ -1,26 +1,39 @@
-# Mac-like Close and Quit v5
+# Mac-like Close and Quit v6
 
 GNOME Shell extension with configurable close and quit shortcuts. This package
-keeps the GNOME Shell 50 / 51 targets from v4, including Wayland sessions.
+keeps the GNOME Shell 50 / 51 targets from v5, including Wayland sessions.
 
-## New in v5
+## New in v6
 
-- **Sublime Text now uses native Ctrl+W by default**, along with recognized
-  browsers. The extension lets the app handle its own tab or document closing.
-- **Preferences → App behavior** lets you choose Automatic, Close tab, or
-  Close window for each installed app. The search button finds apps by name or ID.
-- **Manual app identifiers** support portable apps, unusual launchers, and apps
-  missing from the installed-app list. No JavaScript editing is required.
-- App choices take effect immediately and persist across logins and upgrades.
-- Pending simulated shortcuts are cancelled when focus or relevant settings
-  change, so an old queued action is not sent after switching apps.
+Automatic tab/document closing now includes **25 non-browser app families**
+(24 additions plus Sublime Text), alongside the existing browser detection.
+
+| Category | Automatic tab/document-closing apps |
+| --- | --- |
+| Text and code editors | Sublime Text; Visual Studio Code / Insiders; VSCodium / Insiders; Code - OSS; Cursor; Zed; GNOME Text Editor; gedit; Kate; KWrite; Geany; Mousepad; Xed; Pluma. |
+| File managers | GNOME Files (Nautilus); Dolphin; Nemo; Thunar; Caja; PCManFM; PCManFM-Qt. |
+| Notes, documents and images | Obsidian; Okular; GIMP; Thunderbird. |
+
+Preferences now has an expandable **Built-in tab-closing apps** summary. Each
+installed app still shows **Automatic (tab)** or **Automatic (window)**, using
+the same matching rules as the running extension. See
+[the full app ID catalog](docs/default-apps.md) for recognized package aliases.
+
+**Saved per-app choices and keyboard shortcuts are preserved.** New defaults
+apply to apps left on Automatic. No reset, settings migration, or manual app
+selection is needed. A saved Close window rule continues to win, including for
+an app newly added to the defaults.
+
+The v5 per-app selector, manual identifiers, immediate settings updates and
+native Ctrl+W passthrough remain available. The shortcut-delivery code in
+`extension.js` is unchanged from v5.
 
 ## Default behavior
 
 | Shortcut / app | Behavior |
 | --- | --- |
 | Ctrl+W in a recognized browser | Native Ctrl+W, handled directly by the browser. |
-| Ctrl+W in Sublime Text | Native Ctrl+W, handled directly by Sublime Text. |
+| Ctrl+W in a built-in tab-based app | Native Ctrl+W, handled directly by that app. |
 | Ctrl+W in other apps | Request that the focused window close. |
 | Ctrl+Q | Request that the focused application quit, including its windows. |
 
@@ -35,8 +48,9 @@ Ctrl+W to those apps after you release the modifiers.
 
 ## Install or upgrade
 
-Save the updated download as `mac-like-shortcuts-v5.zip` in `~/Downloads`.
-The archive includes its freshly compiled settings schema and is ready to install.
+Save the updated download as `mac-like-shortcuts-v6.zip` in `~/Downloads`.
+The archive includes the compatible compiled settings schema and is ready to install.
+Schema key names, types, paths, and default values are unchanged from v5.
 
 1. Disable the currently installed extension:
 
@@ -44,7 +58,7 @@ The archive includes its freshly compiled settings schema and is ready to instal
 
 2. Install the update:
 
-   `gnome-extensions install --force ~/Downloads/mac-like-shortcuts-v5.zip`
+   `gnome-extensions install --force ~/Downloads/mac-like-shortcuts-v6.zip`
 
 3. **Log out and log back in** so GNOME Shell loads the new code and settings schema.
 
@@ -72,13 +86,13 @@ app or use the search button, then choose its behavior:
 
 | Choice | Result |
 | --- | --- |
-| Automatic (tab) / Automatic (window) | Use built-in detection: browsers and Sublime Text close tabs; other apps close the focused window. |
+| Automatic (tab) / Automatic (window) | Use built-in detection: browsers and the apps listed above handle Ctrl+W; other apps close the focused window. |
 | Close tab | Let the app handle Ctrl+W for its native tab or document closing. |
-| Close window | Request closure of the focused window, even for a browser or Sublime Text. |
+| Close window | Request closure of the focused window, even for a browser or another built-in tab-based app. |
 
-For example, set a tabbed file manager or editor to **Close tab** if it already
-supports Ctrl+W for closing a tab. Choose **Automatic** to remove that app's
-explicit override.
+Set an unlisted tabbed app to **Close tab** if it already supports Ctrl+W for
+closing a tab. Choose **Automatic** to remove that app's explicit override and
+use the new defaults. Expand **Built-in tab-closing apps** to review the catalog.
 
 **Reset apps** clears all app overrides. The separate **Reset** button on the
 Keyboard shortcuts page restores Ctrl+W and Ctrl+Q without clearing app choices.
@@ -122,8 +136,8 @@ Set the complete Close window override list:
 
 `gsettings --schemadir "$HOME/.local/share/gnome-shell/extensions/mac-like-shortcuts@local/schemas" set org.gnome.shell.extensions.mac-like-shortcuts window-close-apps "['firefox.desktop']"`
 
-Both lists default to empty; automatic browser and Sublime Text detection still
-applies. The precedence is Close window override, then Close tab override, then
+Both override lists default to empty; the built-in automatic detection still
+applies. Default apps are kept in `appRules.js`, not written into these lists. The precedence is Close window override, then Close tab override, then
 automatic detection.
 
 ## Limits and verification
@@ -137,10 +151,40 @@ automatic detection.
   identifier can handle an unrecognized launcher or package variant.
 - Window-close and quit requests are graceful. Applications can prompt about
   unsaved work, refuse closure, or keep background processes running.
-- JavaScript syntax, 14 runtime checks, 8 preferences checks, settings defaults,
-  and ZIP integrity were checked. The settings schema was compiled with GLib's
-  strict validation. Automated runtime/preferences checks use mocked GNOME APIs;
-  this package has **not been tested in a live GNOME Shell desktop session**.
+- Terminals, JetBrains IDEs, Emacs and Vim are deliberately not added to the
+  automatic tab list. Their Ctrl+W actions differ from tab closing. Their
+  existing window-close default is unchanged. A manual Close tab rule only
+  passes through Ctrl+W; it cannot remap Ctrl+W to Ctrl+Shift+W or Ctrl+F4.
+- Native app keymaps, Vim/Emacs modes, plugins, embedded terminals, pinned tabs,
+  and dialog focus can change what Ctrl+W does. The extension does not override
+  those internal app behaviors.
+- **60 automated tests passed**, covering app aliases and normalization,
+  exclusions, conflicting overrides, focus/settings changes, simulated custom
+  shortcuts, preference controls, reset behavior, and listener cleanup. Runtime
+  and preference tests use mocked GNOME APIs; there has been **no live GNOME
+  Shell / GTK session or real keyboard delivery test** in this environment.
+- JavaScript syntax, metadata, XML schema definitions, compiled-schema loading
+  through GLib, and ZIP integrity were checked. The compatible compiled schema
+  from v5 is retained because no schema keys, types or default values changed.
+
+## Development and tests
+
+The ZIP contains the complete extension source, documentation, and headless
+tests. Node.js 18 or newer is needed only to run the tests, not to use the
+extension. From the extracted source directory:
+
+`node --test tests/*.test.mjs`
+
+New non-browser defaults belong in `DEFAULT_TAB_APP_GROUPS` in `appRules.js`.
+Add exact aliases only after checking the application's default Linux Ctrl+W
+behavior; update `docs/default-apps.md` too. The preferences summary uses the
+runtime catalog directly. Avoid broad name matches and do not populate the
+user's override lists with built-in defaults.
+
+For a repository update, replace the corresponding extension files with the
+contents of this ZIP, preserving the repository's existing directory layout.
+Keep unrelated repository files and `.git` intact. Review the changes before
+committing. See `CHANGELOG.md` for release notes.
 
 ## Logs
 

@@ -14,7 +14,7 @@
     <key name="tab-close-apps" type="as">
       <default>[]</default>
       <summary>Applications that use native tab closing</summary>
-      <description>Desktop application IDs or WM_CLASS values that should receive Ctrl+W instead of a window-close request. Matching is exact and case-insensitive, with an optional .desktop suffix. Overrides automatic detection of browsers and Sublime Text.</description>
+      <description>Desktop application IDs or WM_CLASS values that should receive Ctrl+W instead of a window-close request. Matching is exact and case-insensitive, with an optional .desktop suffix. Overrides automatic detection of browsers and the built-in common tab-based apps.</description>
     </key>
     <key name="window-close-apps" type="as">
       <default>[]</default>

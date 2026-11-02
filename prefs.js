@@ -3,11 +3,11 @@ import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
-import {isDefaultTabApp, normalizeAppId} from './appRules.js';
+import {DEFAULT_TAB_APP_GROUPS, isDefaultTabApp, normalizeAppId} from './appRules.js';
 
 const SHORTCUTS = [
     ['close-item', 'Close tab or window',
-        'Ctrl+W passes to browsers, Sublime Text, and your chosen apps; others close the window.'],
+        'Ctrl+W passes to recognized tab-based apps and your chosen apps; others close the window.'],
     ['quit-app', 'Quit application',
         'Requests that every window of the focused application close.'],
 ];
@@ -127,8 +127,9 @@ export default class ShortcutPreferences extends ExtensionPreferences {
 
         const defaults = new Adw.PreferencesGroup({
             title: 'Choose what the close shortcut does',
-            description: 'Automatic uses tab closing in browsers and Sublime Text, ' +
-                'and window closing in other apps. Close tab lets the app handle ' +
+            description: 'Automatic uses tab closing in browsers and the common apps ' +
+                'listed below, and window closing in other apps. Your saved ' +
+                'choices override these defaults. Close tab lets the app handle ' +
                 'Ctrl+W itself; the app decides what happens to its last tab. ' +
                 'Changes apply immediately.',
         });
@@ -141,6 +142,34 @@ export default class ShortcutPreferences extends ExtensionPreferences {
         resetRow.add_suffix(reset);
         resetRow.activatable_widget = reset;
         defaults.add(resetRow);
+
+        const builtInApps = new Adw.ExpanderRow({
+            title: 'Built-in tab-closing apps',
+            subtitle: 'Expand to see the Automatic defaults.',
+        });
+        defaults.add(builtInApps);
+        builtInApps.add_row(new Adw.ActionRow({
+            title: 'Web browsers',
+            subtitle: 'Firefox, Chrome, Chromium, Brave, Edge, Vivaldi, Opera, ' +
+                'GNOME Web, LibreWolf, Waterfox, Floorp, Zen, Tor Browser, DuckDuckGo.',
+            subtitle_lines: 0,
+            use_markup: false,
+        }));
+        for (const group of DEFAULT_TAB_APP_GROUPS) {
+            builtInApps.add_row(new Adw.ActionRow({
+                title: group.title,
+                subtitle: group.apps.map(app => app.name).join(', '),
+                subtitle_lines: 0,
+                use_markup: false,
+            }));
+        }
+        builtInApps.add_row(new Adw.ActionRow({
+            title: 'Not every tabbed app uses Ctrl+W to close a tab',
+            subtitle: 'Terminals and JetBrains IDEs are not included in the tab ' +
+                'defaults. Their existing window-close behavior is unchanged. ' +
+                'Close tab passes Ctrl+W through; it does not remap app shortcuts.',
+            subtitle_lines: 0,
+        }));
 
         const manualGroup = new Adw.PreferencesGroup({
             title: 'Add an app manually',
