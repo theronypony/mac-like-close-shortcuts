@@ -1,4 +1,4 @@
-# Mac-like Close and Quit v6
+# Mac-like Close and Quit
 
 GNOME Shell extension with configurable close and quit shortcuts. This package
 keeps the GNOME Shell 50 / 51 targets from v5, including Wayland sessions.
